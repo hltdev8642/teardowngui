@@ -33,18 +33,29 @@ const createElement = (type: ElementType): BaseElement => {
   };
   switch (type) {
     case 'text':
-      base.props.text = 'Label';
-      base.h = 30;
-      break;
+      base.props.text = 'Label'; base.h = 30; break;
     case 'button':
-      base.props.text = 'Button';
-      break;
+      base.props.text = 'Button'; break;
+    case 'imageButton':
+      base.props.path = 'ui/example.png'; break;
+    case 'blankButton':
+      base.props.text = ''; break;
     case 'slider':
-      base.props.min = 0; base.props.max = 100; base.props.var = 'sliderVal';
-      break;
+      base.props.min = 0; base.props.max = 100; base.props.var = 'sliderVal'; base.h = 24; break;
     case 'image':
-      base.props.path = 'ui/example.png';
-      break;
+      base.props.path = 'ui/example.png'; base.w = 128; base.h = 128; break;
+    case 'imageBox':
+      base.props.path = 'ui/example.png'; base.w = 128; base.h = 128; base.props.borderW = 10; base.props.borderH = 10; break;
+    case 'roundrect':
+      base.props.radius = 8; break;
+    case 'roundedRectOutline':
+      base.props.radius = 8; base.props.thickness = 2; break;
+    case 'rectOutline':
+      base.props.thickness = 2; break;
+    case 'circle':
+      base.props.radius = 50; base.w = 100; base.h = 100; break;
+    case 'circleOutline':
+      base.props.radius = 50; base.props.thickness = 4; base.w = 100; base.h = 100; break;
   }
   return base;
 };
@@ -110,18 +121,22 @@ export const useProject = create<ProjectState & Actions>((set: any, get: any) =>
           if (/^UiText\(/.test(first)) {
             const txt = first.match(/^UiText\((.*)\)/);
             el = { type:'text', x,y,w:200,h:30, props:{ text: txt? txt[1].replace(/^"|"$/g,''): 'Text'} } as any;
-          } else if (/^UiRect\(\d+,\s*\d+\)/.test(first)) {
-            const mm = first.match(/UiRect\((\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[1]); h=parseInt(mm[2]); }
-            el = { type:'rect', x,y,w,h, props:{} } as any;
-          } else if (/^UiRoundedRect\(/.test(first)) {
-            const mm = first.match(/UiRoundedRect\((\d+),\s*(\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[1]); h=parseInt(mm[2]); const r=parseInt(mm[3]); el = { type:'roundrect', x,y,w,h, props:{ radius:r } } as any; }
-          } else if (/^UiImage\(/.test(first)) {
-            const mm = first.match(/UiImage\((.*)\)/); const path = mm? mm[1].replace(/^"|"$/g,''):''; el = { type:'image', x,y,w:200,h:200, props:{ path } } as any;
-          } else if (/^if UiTextButton\(/.test(first)) {
-            const mm = first.match(/UiTextButton\((".*?"),\s*(\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[2]); h=parseInt(mm[3]); const text = mm[1].replace(/^"|"$/g,''); el = { type:'button', x,y,w,h, props:{ text } } as any; }
-          } else if (/UiSlider\(/.test(first)) {
-            const mm = first.match(/UiSlider\("dot.png",\s*"x",\s*(\w+)\s*or\s*(\d+),\s*(\d+),\s*(\d+)\)/);
-            if (mm) { const vari = mm[1]; const min = parseInt(mm[3]); const max = parseInt(mm[4]); el = { type:'slider', x,y,w:200,h:24, props:{ var: vari, min, max } } as any; }
+          } else if (/^UiRect\(/.test(first)) {
+            const mm = first.match(/UiRect\((\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[1]); h=parseInt(mm[2]); el = { type:'rect', x,y,w,h, props:{} } as any; }
+          } else if (/^UiRectOutline\(/.test(first)) {
+            const mm = first.match(/UiRectOutline\((\d+),\s*(\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[1]); h=parseInt(mm[2]); const thickness=parseInt(mm[3]); el = { type:'rectOutline', x,y,w,h, props:{ thickness } } as any; }
+          } else if (/^UiRoundedRectOutline\(/.test(first)) {
+            const mm = first.match(/UiRoundedRectOutline\((\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[1]); h=parseInt(mm[2]); const radius=parseInt(mm[3]); const thickness=parseInt(mm[4]); el = { type:'roundedRectOutline', x,y,w,h, props:{ radius, thickness } } as any; }
+          } else if (/^UiCircleOutline\(/.test(first)) {
+            const mm = first.match(/UiCircleOutline\((\d+),\s*(\d+)\)/); if (mm){ const radius=parseInt(mm[1]); const thickness=parseInt(mm[2]); w=radius*2; h=radius*2; el = { type:'circleOutline', x,y,w,h, props:{ radius, thickness } } as any; }
+          } else if (/^UiCircle\(/.test(first)) {
+            const mm = first.match(/UiCircle\((\d+)\)/); if (mm){ const radius=parseInt(mm[1]); w=radius*2; h=radius*2; el = { type:'circle', x,y,w,h, props:{ radius } } as any; }
+          } else if (/^UiImageBox\(/.test(first)) {
+            const mm = first.match(/UiImageBox\((".*?"),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[2]); h=parseInt(mm[3]); const borderW=parseInt(mm[4]); const borderH=parseInt(mm[5]); const path = mm[1].replace(/^"|"$/g,''); el = { type:'imageBox', x,y,w,h, props:{ path, borderW, borderH } } as any; }
+          } else if (/^UiImageButton\(/.test(first)) {
+            const mm = first.match(/UiImageButton\((".*?")\)/); if (mm){ const path = mm[1].replace(/^"|"$/g,''); el = { type:'imageButton', x,y,w:64,h:64, props:{ path } } as any; }
+          } else if (/^UiBlankButton\(/.test(first)) {
+            const mm = first.match(/UiBlankButton\((\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[1]); h=parseInt(mm[2]); el = { type:'blankButton', x,y,w,h, props:{} } as any; }
           }
           if (el) parsed.push(el);
         }

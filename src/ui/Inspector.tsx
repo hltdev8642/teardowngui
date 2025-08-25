@@ -31,6 +31,31 @@ export const Inspector: React.FC = () => {
           </label>
         </>
       )}
+      {el.type === 'image' || el.type==='imageButton' || el.type==='imageBox' ? (
+        <label style={{display:'block', marginTop:8}}>Image Path<br/>
+          <input value={el.props.path||''} onChange={(e:any)=>set('path', e.target.value)} style={{width:'100%'}} />
+        </label>
+      ):null}
+      {el.type === 'imageBox' ? (
+        <>
+          <label style={{display:'block', marginTop:8}}>Border W<br/>
+            <input type='number' value={el.props.borderW??10} onChange={(e:any)=>set('borderW', Number(e.target.value))} style={{width:'100%'}} />
+          </label>
+          <label style={{display:'block', marginTop:8}}>Border H<br/>
+            <input type='number' value={el.props.borderH??10} onChange={(e:any)=>set('borderH', Number(e.target.value))} style={{width:'100%'}} />
+          </label>
+        </>
+      ):null}
+      {(el.type === 'roundrect' || el.type==='roundedRectOutline' || el.type==='circle' || el.type==='circleOutline') && (
+        <label style={{display:'block', marginTop:8}}>Radius<br/>
+          <input type='number' value={el.props.radius??8} onChange={(e:any)=>set('radius', Number(e.target.value))} style={{width:'100%'}} />
+        </label>
+      )}
+      {(el.type === 'rectOutline' || el.type==='roundedRectOutline' || el.type==='circleOutline') && (
+        <label style={{display:'block', marginTop:8}}>Thickness<br/>
+          <input type='number' value={el.props.thickness??2} onChange={(e:any)=>set('thickness', Number(e.target.value))} style={{width:'100%'}} />
+        </label>
+      )}
     </div>
   );
 };

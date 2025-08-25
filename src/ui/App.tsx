@@ -18,7 +18,7 @@ export const App: React.FC = () => {
     <div style={{display:'grid', gridTemplateColumns:'220px 1fr 400px', height:'100vh'}}>
       <div style={{borderRight:'1px solid #333', padding:8, display:'flex', flexDirection:'column', gap:8}}>
         <h3>Palette</h3>
-        {['text','rect','roundrect','image','button','slider'].map(t=> (
+        {['text','rect','rectOutline','roundrect','roundedRectOutline','circle','circleOutline','image','imageBox','button','imageButton','blankButton','slider'].map(t=> (
           <button key={t} onClick={()=>add(t as ElementType)} style={{padding:'6px 8px'}}>{t}</button>
         ))}
         <button onClick={()=>regen()} style={{marginTop:12}}>Regenerate Code</button>

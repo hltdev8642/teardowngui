@@ -112,7 +112,13 @@ export const Canvas: React.FC = () => {
                          background: el.type==='text'?'#0000': selected? '#324357' : '#2a2f37',
                          color:'#ddd', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center',
                          userSelect:'none', cursor:'move', transition: drag? 'none':'border-color 0.1s'}}>
-              {el.type === 'text' || el.type==='button' ? (el.props.text || el.name) : el.type}
+              {el.type === 'text' || el.type==='button' ? (el.props.text || el.name) :
+                el.type === 'slider' ? 'slider' :
+                el.type === 'image' ? 'img' :
+                el.type === 'imageButton' ? 'imgBtn' :
+                el.type === 'blankButton' ? '' :
+                el.type === 'imageBox' ? 'imgBox' :
+                el.type}
               {selected && (
                 <>
                   {/* Resize handle bottom-right */}

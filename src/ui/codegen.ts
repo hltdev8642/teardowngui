@@ -9,28 +9,38 @@ function emitElement(el: BaseElement, depth: number, all: Record<string, BaseEle
   t(translate);
   switch (el.type) {
     case 'text':
-      t(`UiText(${JSON.stringify(el.props.text || 'Text')})`);
-      break;
+      t(`UiText(${JSON.stringify(el.props.text || 'Text')})`); break;
     case 'rect':
-      t(`UiRect(${Math.round(el.w)}, ${Math.round(el.h)})`);
-      break;
+      t(`UiRect(${Math.round(el.w)}, ${Math.round(el.h)})`); break;
+    case 'rectOutline':
+      t(`UiRectOutline(${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.thickness||2)})`); break;
     case 'roundrect':
-      t(`UiRoundedRect(${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.radius || 8)})`);
-      break;
+      t(`UiRoundedRect(${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.radius || 8)})`); break;
+    case 'roundedRectOutline':
+      t(`UiRoundedRectOutline(${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.radius||8)}, ${Math.round(el.props.thickness||2)})`); break;
+    case 'circle':
+      t(`UiCircle(${Math.round(el.props.radius|| (el.w/2))})`); break;
+    case 'circleOutline':
+      t(`UiCircleOutline(${Math.round(el.props.radius|| (el.w/2))}, ${Math.round(el.props.thickness||2)})`); break;
     case 'image':
-      t(`UiImage(${JSON.stringify(el.props.path || 'ui/example.png')})`);
-      break;
-    case 'button':
+      t(`UiImage(${JSON.stringify(el.props.path || 'ui/example.png')})`); break;
+    case 'imageBox':
+      t(`UiImageBox(${JSON.stringify(el.props.path||'ui/example.png')}, ${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.borderW||10)}, ${Math.round(el.props.borderH||10)})`); break;
+    case 'button': {
       const label = JSON.stringify(el.props.text || 'Button');
       const handler = el.props.onPress || 'on' + el.name.replace(/[^A-Za-z0-9]/g,'') + 'Press';
-      t(`if UiTextButton(${label}, ${Math.round(el.w)}, ${Math.round(el.h)}) then ${handler}() end`);
-      break;
-    case 'slider':
+      t(`if UiTextButton(${label}, ${Math.round(el.w)}, ${Math.round(el.h)}) then ${handler}() end`); break; }
+    case 'imageButton': {
+      const handler = el.props.onPress || 'on' + el.name.replace(/[^A-Za-z0-9]/g,'') + 'Press';
+      t(`if UiImageButton(${JSON.stringify(el.props.path||'ui/example.png')}) then ${handler}() end`); break; }
+    case 'blankButton': {
+      const handler = el.props.onPress || 'on' + el.name.replace(/[^A-Za-z0-9]/g,'') + 'Press';
+      t(`if UiBlankButton(${Math.round(el.w)}, ${Math.round(el.h)}) then ${handler}() end`); break; }
+    case 'slider': {
       const varName = el.props.var || el.name + 'Val';
       const onChange = el.props.onChange || 'on' + el.name.replace(/[^A-Za-z0-9]/g,'') + 'Change';
       t(`${varName}, __done = UiSlider("dot.png", "x", ${varName} or ${(el.props.min||0)}, ${(el.props.min||0)}, ${(el.props.max||100)})`);
-      t(`if __done then ${onChange}(${varName}) end`);
-      break;
+      t(`if __done then ${onChange}(${varName}) end`); break; }
   }
   t('UiPop()');
   return lines.join('\n');
