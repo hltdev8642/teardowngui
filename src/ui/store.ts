@@ -105,83 +105,117 @@ export const useProject = create<ProjectState & Actions>((set: any, get: any) =>
   })),
   regenCode: () => {
     const state = get();
-    const generatedFull = generateLua(state); // fallback full generation
+    const generatedFull = generateLua(state); // fallback
     const current = state.code || '';
 
-    // Build new block strings per element id
+    // Build element emission blocks
+    const buildBlock = (el: BaseElement): string => {
+      const meta = `--TDGUI id=${el.id} name=${encodeURIComponent(el.name)} type=${el.type} w=${Math.round(el.w)} h=${Math.round(el.h)}`;
+      const lines: string[] = [];
+      lines.push('UiPush()');
+      lines.push(`UiTranslate(${Math.round(el.x)}, ${Math.round(el.y)})`);
+      switch (el.type) {
+        case 'text': lines.push(`UiText(${JSON.stringify(el.props.text || 'Text')})`); break;
+        case 'rect': lines.push(`UiRect(${Math.round(el.w)}, ${Math.round(el.h)})`); break;
+        case 'rectOutline': lines.push(`UiRectOutline(${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.thickness||2)})`); break;
+        case 'roundrect': lines.push(`UiRoundedRect(${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.radius||8)})`); break;
+        case 'roundedRectOutline': lines.push(`UiRoundedRectOutline(${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.radius||8)}, ${Math.round(el.props.thickness||2)})`); break;
+        case 'circle': lines.push(`UiCircle(${Math.round(el.props.radius|| (el.w/2))})`); break;
+        case 'circleOutline': lines.push(`UiCircleOutline(${Math.round(el.props.radius|| (el.w/2))}, ${Math.round(el.props.thickness||2)})`); break;
+        case 'image': lines.push(`UiImage(${JSON.stringify(el.props.path || 'ui/example.png')})`); break;
+        case 'imageBox': lines.push(`UiImageBox(${JSON.stringify(el.props.path||'ui/example.png')}, ${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.borderW||10)}, ${Math.round(el.props.borderH||10)})`); break;
+        case 'button': { const label = JSON.stringify(el.props.text||'Button'); const handler = el.props.onPress || ('on'+el.name.replace(/[^A-Za-z0-9]/g,'')+'Press'); lines.push(`if UiTextButton(${label}, ${Math.round(el.w)}, ${Math.round(el.h)}) then ${handler}() end`); break; }
+        case 'imageButton': { const handler = el.props.onPress || ('on'+el.name.replace(/[^A-Za-z0-9]/g,'')+'Press'); lines.push(`if UiImageButton(${JSON.stringify(el.props.path||'ui/example.png')}) then ${handler}() end`); break; }
+        case 'blankButton': { const handler = el.props.onPress || ('on'+el.name.replace(/[^A-Za-z0-9]/g,'')+'Press'); lines.push(`if UiBlankButton(${Math.round(el.w)}, ${Math.round(el.h)}) then ${handler}() end`); break; }
+        case 'slider': { const varName = el.props.var || el.name + 'Val'; const onChange = el.props.onChange || ('on'+el.name.replace(/[^A-Za-z0-9]/g,'')+'Change'); lines.push(`${varName}, __done = UiSlider("dot.png", "x", ${varName} or ${(el.props.min||0)}, ${(el.props.min||0)}, ${(el.props.max||100)})`); lines.push(`if __done then ${onChange}(${varName}) end`); break; }
+        case 'mute': lines.push('UiMute(1)'); break;
+        case 'colorFilter': lines.push(`UiColorFilter(${el.props.r||1}, ${el.props.g||1}, ${el.props.b||1}, ${el.props.a??1})`); break;
+        case 'color': lines.push(`UiColor(${el.props.r||1}, ${el.props.g||1}, ${el.props.b||1}, ${el.props.a??1})`); break;
+        case 'disableInput': lines.push('UiDisableInput()'); break;
+        case 'buttonHoverColor': lines.push(`UiButtonHoverColor(${el.props.r||0.8}, ${el.props.g||0.8}, ${el.props.b||0.8}, ${el.props.a??1})`); break;
+        case 'setCursorState': lines.push(`UiSetCursorState(${el.props.state||0})`); break;
+        case 'ignoreNavigation': lines.push('UiIgnoreNavigation()'); break;
+        case 'font': lines.push(`UiFont(${JSON.stringify(el.props.path||'regular.ttf')}, ${el.props.size||18})`); break;
+        case 'align': lines.push(`UiAlign(${JSON.stringify(el.props.align||'left')})`); break;
+        case 'textOutline': lines.push(`UiTextOutline(${el.props.r||0}, ${el.props.g||0}, ${el.props.b||0}, ${el.props.a??1}, ${el.props.thickness||0.1})`); break;
+        case 'wordWrap': lines.push(`UiWordWrap(${el.props.width||600})`); break;
+        case 'textAlignment': lines.push(`UiTextAlignment(${JSON.stringify(el.props.alignment||'left')})`); break;
+        case 'drawLater': lines.push('-- UiDrawLater not supported in static export'); break;
+      }
+      lines.push('UiPop()');
+      return meta + '\n' + lines.join('\n');
+    };
+
+    // If metadata already present, use id-based replacement logic (existing path below)
+    const hasMeta = /--TDGUI id=/.test(current);
+
+    if (!hasMeta) {
+      // Attempt in-place instrumentation: replace original UiPush/UiTranslate(x,y)...UiPop() blocks matching each element coordinates
+      let updatedCode = current;
+      const replacedIds = new Set<string>();
+      state.rootOrder.forEach((id: string) => {
+        const el = state.elements[id]; if (!el) return;
+        const x = Math.round(el.x); const y = Math.round(el.y);
+        // Regex: capture indent and block. Use non-greedy until first UiPop() at same indent.
+        const blockRegex = new RegExp(`(^|\\n)([\\ \t]*)UiPush\\(\\)\\s*\\n((?:[\\s\\S]*?))?([\\ \t]*)UiTranslate\\(\\s*${x}\\s*,\\s*${y}\\s*\\)([\\s\\S]*?)([\\ \t]*)UiPop\\(\\)`, 'm');
+        const match = updatedCode.match(blockRegex);
+        if (match) {
+          const indent = match[2] || match[4] || '';
+            const newBlock = buildBlock(el).split('\n').map(l=> indent + l).join('\n');
+            // Insert leading newline if original had one (match[1])
+            updatedCode = updatedCode.replace(blockRegex, `${match[1] || ''}${newBlock}`);
+            replacedIds.add(id);
+        }
+      });
+      // For any not replaced (new elements) append inside draw() if possible
+      if (replacedIds.size < state.rootOrder.length) {
+        const remaining = state.rootOrder.filter((id:string)=> !replacedIds.has(id));
+        if (remaining.length) {
+          const insertion = remaining.map((id:string)=> buildBlock(state.elements[id])).join('\n');
+          const drawPos = updatedCode.search(/function\s+draw\s*\(/);
+          if (drawPos !== -1) {
+            // Insert before final UiPop() of draw
+            const lastUiPop = updatedCode.lastIndexOf('UiPop()', updatedCode.indexOf('end', drawPos));
+            if (lastUiPop !== -1) {
+              const before = updatedCode.slice(0,lastUiPop);
+              const after = updatedCode.slice(lastUiPop);
+              const indentMatch = /(\n)([ \t]*)UiPop\(\)/.exec(after);
+              const indent = indentMatch ? indentMatch[2] : '        ';
+              updatedCode = before + insertion.split('\n').map((l: string)=> indent + l).join('\n') + '\n' + after;
+            } else {
+              updatedCode += '\n' + insertion;
+            }
+          } else {
+            updatedCode += '\n' + insertion;
+          }
+        }
+      }
+      set({ code: updatedCode });
+      return; // done
+    }
+
+    // ===== Existing metadata path (was previously implemented) =====
     const blockMap: Record<string,string> = {};
     state.rootOrder.forEach((id: string) => {
-      const el = state.elements[id]; if (!el) return;
-      const block = (() => {
-        const meta = `--TDGUI id=${el.id} name=${encodeURIComponent(el.name)} type=${el.type} w=${Math.round(el.w)} h=${Math.round(el.h)}`;
-        // reuse emit logic by generating a mini project state with only this element
-        // Quick inline emission (duplicated logic minimal):
-        const lines: string[] = [];
-        lines.push('UiPush()');
-        lines.push(`UiTranslate(${Math.round(el.x)}, ${Math.round(el.y)})`);
-        switch (el.type) {
-          case 'text': lines.push(`UiText(${JSON.stringify(el.props.text || 'Text')})`); break;
-          case 'rect': lines.push(`UiRect(${Math.round(el.w)}, ${Math.round(el.h)})`); break;
-          case 'rectOutline': lines.push(`UiRectOutline(${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.thickness||2)})`); break;
-          case 'roundrect': lines.push(`UiRoundedRect(${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.radius||8)})`); break;
-          case 'roundedRectOutline': lines.push(`UiRoundedRectOutline(${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.radius||8)}, ${Math.round(el.props.thickness||2)})`); break;
-          case 'circle': lines.push(`UiCircle(${Math.round(el.props.radius|| (el.w/2))})`); break;
-          case 'circleOutline': lines.push(`UiCircleOutline(${Math.round(el.props.radius|| (el.w/2))}, ${Math.round(el.props.thickness||2)})`); break;
-          case 'image': lines.push(`UiImage(${JSON.stringify(el.props.path || 'ui/example.png')})`); break;
-          case 'imageBox': lines.push(`UiImageBox(${JSON.stringify(el.props.path||'ui/example.png')}, ${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.borderW||10)}, ${Math.round(el.props.borderH||10)})`); break;
-          case 'button': { const label = JSON.stringify(el.props.text||'Button'); const handler = el.props.onPress || ('on'+el.name.replace(/[^A-Za-z0-9]/g,'')+'Press'); lines.push(`if UiTextButton(${label}, ${Math.round(el.w)}, ${Math.round(el.h)}) then ${handler}() end`); break; }
-          case 'imageButton': { const handler = el.props.onPress || ('on'+el.name.replace(/[^A-Za-z0-9]/g,'')+'Press'); lines.push(`if UiImageButton(${JSON.stringify(el.props.path||'ui/example.png')}) then ${handler}() end`); break; }
-          case 'blankButton': { const handler = el.props.onPress || ('on'+el.name.replace(/[^A-Za-z0-9]/g,'')+'Press'); lines.push(`if UiBlankButton(${Math.round(el.w)}, ${Math.round(el.h)}) then ${handler}() end`); break; }
-          case 'slider': { const varName = el.props.var || el.name + 'Val'; const onChange = el.props.onChange || ('on'+el.name.replace(/[^A-Za-z0-9]/g,'')+'Change'); lines.push(`${varName}, __done = UiSlider("dot.png", "x", ${varName} or ${(el.props.min||0)}, ${(el.props.min||0)}, ${(el.props.max||100)})`); lines.push(`if __done then ${onChange}(${varName}) end`); break; }
-          case 'mute': lines.push('UiMute(1)'); break;
-          case 'colorFilter': lines.push(`UiColorFilter(${el.props.r||1}, ${el.props.g||1}, ${el.props.b||1}, ${el.props.a??1})`); break;
-          case 'color': lines.push(`UiColor(${el.props.r||1}, ${el.props.g||1}, ${el.props.b||1}, ${el.props.a??1})`); break;
-          case 'disableInput': lines.push('UiDisableInput()'); break;
-          case 'buttonHoverColor': lines.push(`UiButtonHoverColor(${el.props.r||0.8}, ${el.props.g||0.8}, ${el.props.b||0.8}, ${el.props.a??1})`); break;
-          case 'setCursorState': lines.push(`UiSetCursorState(${el.props.state||0})`); break;
-          case 'ignoreNavigation': lines.push('UiIgnoreNavigation()'); break;
-          case 'font': lines.push(`UiFont(${JSON.stringify(el.props.path||'regular.ttf')}, ${el.props.size||18})`); break;
-          case 'align': lines.push(`UiAlign(${JSON.stringify(el.props.align||'left')})`); break;
-          case 'textOutline': lines.push(`UiTextOutline(${el.props.r||0}, ${el.props.g||0}, ${el.props.b||0}, ${el.props.a??1}, ${el.props.thickness||0.1})`); break;
-          case 'wordWrap': lines.push(`UiWordWrap(${el.props.width||600})`); break;
-          case 'textAlignment': lines.push(`UiTextAlignment(${JSON.stringify(el.props.alignment||'left')})`); break;
-          case 'drawLater': lines.push('-- UiDrawLater not supported in static export'); break;
-        }
-        lines.push('UiPop()');
-        return meta + '\n' + lines.join('\n');
-      })();
-      blockMap[id] = block;
-    });
+      const el = state.elements[id]; if (!el) return; blockMap[id] = buildBlock(el); });
 
-    // Regex to find existing metadata blocks
     const blockRegex = /(\n?)([ \t]*)--TDGUI id=([^\s]+)[^\n]*\n([ \t]*UiPush\(\)[\s\S]*?UiPop\(\))/g;
     const seenIds = new Set<string>();
     let replacedSomething = false;
     let updated = current.replace(blockRegex, (match: string, leadingNL: string, indent: string, id: string) => {
       const newBlock = blockMap[id];
-      if (!newBlock) {
-        // Element removed in UI: drop block
-        replacedSomething = true;
-        return leadingNL || '';
-      }
-      seenIds.add(id);
-      replacedSomething = true;
-      // Re-indent new block with existing indent
-      const indented = newBlock.split('\n').map((l,i)=> indent + l).join('\n');
+      if (!newBlock) { replacedSomething = true; return leadingNL || ''; }
+      seenIds.add(id); replacedSomething = true;
+      const indented = newBlock.split('\n').map((l: string)=> indent + l).join('\n');
       return (leadingNL||'') + indented;
     });
 
-    // Determine insertion point for new elements not present in original code
     const missing = state.rootOrder.filter((id: string) => !seenIds.has(id));
     if (missing.length) {
-      // Build insertion text
       const insertion = missing.map((id: string) => blockMap[id]).join('\n');
-      // Try to insert inside draw() before its final UiPop()
       const drawMatch = /function\s+draw\s*\([^)]*\)([\s\S]*?)end/gm.exec(updated);
       if (drawMatch) {
-        // Find last UiPop() inside draw
         const startIdx = drawMatch.index;
-        const drawBodyStart = updated.indexOf('{', startIdx); // not Lua, fallback simple search
         const lastUiPopIdx = updated.lastIndexOf('UiPop()', updated.indexOf('end', startIdx));
         if (lastUiPopIdx !== -1) {
           const before = updated.slice(0, lastUiPopIdx);
@@ -191,20 +225,15 @@ export const useProject = create<ProjectState & Actions>((set: any, get: any) =>
           updated = before + insertion.split('\n').map((l: string)=> indent + l).join('\n') + '\n' + after;
           replacedSomething = true;
         } else {
-          // Append at end of file
           updated += '\n' + insertion;
         }
       } else {
-        // No draw() function found – append
         updated += '\n' + insertion;
       }
     }
-
-    // Fallback: if nothing was replaced and no metadata present, use marker approach or full generation
     if (!replacedSomething && !/--TDGUI id=/.test(current)) {
-      updated = generatedFull; // full overwrite only when we have no existing metadata
+      updated = generatedFull;
     }
-
     set({ code: updated });
   },
   setElementPos: (id: string, x: number, y: number) => set(produce((s: ProjectState) => {
@@ -222,6 +251,14 @@ export const useProject = create<ProjectState & Actions>((set: any, get: any) =>
     interface PEl { id?:string; type: ElementType; x:number; y:number; w:number; h:number; props: Record<string,any>; metaName?: string; metaW?:number; metaH?:number; }
     const parsed: PEl[] = [];
 
+    // Variable environment (simple numeric assignments)
+    const varEnv: Record<string, number> = {};
+    const assignRe = /^\s*(?:local\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+(?:\.\d+)?)\b/;
+    for (const ln of rawLines) {
+      const m = ln.match(assignRe);
+      if (m) varEnv[m[1]] = parseFloat(m[2]);
+    }
+
     // Context stack for additive translations within UiPush/UiPop blocks
     interface Ctx { offX:number; offY:number; meta?: { id?:string; name?:string; w?:number; h?:number }; }
     const ctxStack: Ctx[] = [{ offX:0, offY:0 }];
@@ -233,26 +270,38 @@ export const useProject = create<ProjectState & Actions>((set: any, get: any) =>
     const num = /^-?\d+(?:\.\d+)?$/;
     const reMeta = /--TDGUI\s+id=([^\s]+)\s+name=([^\s]+)\s+type=([\w]+)(?:.*?w=(\d+)\s+h=(\d+))?/;
 
-    // Utility to attempt element creation
+    const resolveToken = (tok: string): number | undefined => {
+      const t = tok.trim();
+      if (num.test(t)) return parseFloat(t);
+      if (t in varEnv) return varEnv[t];
+      return undefined;
+    };
+
+    // Utility to attempt element creation (supports variable tokens for size)
     function createElementFromLine(l:string, ctx:Ctx): PEl | null {
       let w=200,h=50; let type:ElementType='rect'; let props:Record<string,any>={};
       const line = l.trim();
+      const rectGeneric = line.match(/^UiRect\(([^,]+),\s*([^\)]+)\)/);
+      const rectOutlineGeneric = line.match(/^UiRectOutline\(([^,]+),\s*([^,]+),\s*([^\)]+)\)/);
+      const rrGeneric = line.match(/^UiRoundedRect\(([^,]+),\s*([^,]+),\s*([^\)]+)\)/);
+      const rrOutlineGeneric = line.match(/^UiRoundedRectOutline\(([^,]+),\s*([^,]+),\s*([^,]+),\s*([^\)]+)\)/);
+      const circleGeneric = line.match(/^UiCircle\(([^\)]+)\)/);
+      const circleOutlineGeneric = line.match(/^UiCircleOutline\(([^,]+),\s*([^\)]+)\)/);
       if (/^UiText\(/.test(line)) { type='text'; props.text=(line.match(/^UiText\((.*)\)/)?.[1]||'').replace(/^"|"$/g,''); h=30; }
-      else if (/^UiRectOutline\(/.test(line)) { type='rectOutline'; const m=line.match(/UiRectOutline\((\d+),(\s*\d+),(\s*\d+)\)/); if(m){w=+m[1];h=+m[2];props.thickness=+m[3];} }
-      else if (/^UiRect\(/.test(line)) { type='rect'; const m=line.match(/UiRect\((\d+),(\s*\d+)\)/); if(m){w=+m[1];h=+m[2];} }
-      else if (/^UiRoundedRectOutline\(/.test(line)) { type='roundedRectOutline'; const m=line.match(/UiRoundedRectOutline\((\d+),(\s*\d+),(\s*\d+),(\s*\d+)\)/); if(m){w=+m[1];h=+m[2];props.radius=+m[3];props.thickness=+m[4];} }
-      else if (/^UiRoundedRect\(/.test(line)) { type='roundrect'; const m=line.match(/UiRoundedRect\((\d+),(\s*\d+),(\s*\d+)\)/); if(m){w=+m[1];h=+m[2];props.radius=+m[3];} }
-      else if (/^UiCircleOutline\(/.test(line)) { type='circleOutline'; const m=line.match(/UiCircleOutline\((\d+),(\s*\d+)\)/); if(m){const r=+m[1];props.radius=r;props.thickness=+m[2];w=h=r*2;} }
-      else if (/^UiCircle\(/.test(line)) { type='circle'; const m=line.match(/UiCircle\((\d+)\)/); if(m){const r=+m[1];props.radius=r;w=h=r*2;} }
-      else if (/^UiImageBox\(/.test(line)) { type='imageBox'; const m=line.match(/UiImageBox\((".*?"),(\s*\d+),(\s*\d+),(\s*\d+),(\s*\d+)\)/); if(m){props.path=m[1].replace(/^"|"$/g,'');w=+m[2];h=+m[3];props.borderW=+m[4];props.borderH=+m[5];} }
-      else if (/^UiImageButton\(/.test(line)) { type='imageButton'; const m=line.match(/UiImageButton\((".*?")\)/); if(m){props.path=m[1].replace(/^"|"$/g,'');w=h=64;} }
-      else if (/^UiImage\(/.test(line)) { type='image'; const m=line.match(/UiImage\((".*?")\)/); if(m){props.path=m[1].replace(/^"|"$/g,'');w=h=128;} }
-      else if (/^UiBlankButton\(/.test(line)) { type='blankButton'; const m=line.match(/UiBlankButton\((\d+),(\s*\d+)\)/); if(m){w=+m[1];h=+m[2];} }
-      else if (/^if UiTextButton\(/.test(line)) { type='button'; const m=line.match(/UiTextButton\((".*?"),(\s*\d+),(\s*\d+)\)/); if(m){props.text=m[1].replace(/^"|"$/g,'');w=+m[2];h=+m[3];} }
-      else if (/UiSlider\(/.test(line)) { type='slider'; const m=line.match(/UiSlider\("dot.png",\s*"x",\s*(\w+)\s*or\s*(\d+),(\s*\d+),(\s*\d+)\)/); if(m){props.var=m[1];props.min=+m[3];props.max=+m[4];w=200;h=24;} }
+      else if (rectOutlineGeneric) { type='rectOutline'; const a=resolveToken(rectOutlineGeneric[1]); const b=resolveToken(rectOutlineGeneric[2]); const c=resolveToken(rectOutlineGeneric[3]); if(a!==undefined&&b!==undefined){w=a;h=b;} if(c!==undefined) props.thickness=c; }
+      else if (rectGeneric) { type='rect'; const a=resolveToken(rectGeneric[1]); const b=resolveToken(rectGeneric[2]); if(a!==undefined&&b!==undefined){w=a;h=b;} }
+      else if (rrOutlineGeneric) { type='roundedRectOutline'; const a=resolveToken(rrOutlineGeneric[1]); const b=resolveToken(rrOutlineGeneric[2]); const r=resolveToken(rrOutlineGeneric[3]); const t=resolveToken(rrOutlineGeneric[4]); if(a!==undefined&&b!==undefined){w=a;h=b;} if(r!==undefined) props.radius=r; if(t!==undefined) props.thickness=t; }
+      else if (rrGeneric) { type='roundrect'; const a=resolveToken(rrGeneric[1]); const b=resolveToken(rrGeneric[2]); const r=resolveToken(rrGeneric[3]); if(a!==undefined&&b!==undefined){w=a;h=b;} if(r!==undefined) props.radius=r; }
+      else if (circleOutlineGeneric) { type='circleOutline'; const r=resolveToken(circleOutlineGeneric[1]); const t=resolveToken(circleOutlineGeneric[2]); if(r!==undefined){props.radius=r; w=h=r*2;} if(t!==undefined) props.thickness=t; }
+      else if (circleGeneric) { type='circle'; const r=resolveToken(circleGeneric[1]); if(r!==undefined){props.radius=r; w=h=r*2;} }
+      else if (/^UiImageBox\(/.test(line)) { type='imageBox'; const m=line.match(/UiImageBox\((".*?"),(\s*[^,]+),(\s*[^,]+),(\s*[^,]+),(\s*[^\)]+)\)/); if(m){props.path=m[1].replace(/^"|"$/g,''); const a=resolveToken(m[2]); const b=resolveToken(m[3]); const bw=resolveToken(m[4]); const bh=resolveToken(m[5]); if(a!==undefined) w=a; if(b!==undefined) h=b; if(bw!==undefined) props.borderW=bw; if(bh!==undefined) props.borderH=bh; } }
+      else if (/^UiImageButton\(/.test(line)) { type='imageButton'; const m=line.match(/UiImageButton\((".*?")\)/); if(m){props.path=m[1].replace(/^"|"$/g,''); w=h=64;} }
+      else if (/^UiImage\(/.test(line)) { type='image'; const m=line.match(/UiImage\((".*?")\)/); if(m){props.path=m[1].replace(/^"|"$/g,''); w=h=128;} }
+      else if (/^UiBlankButton\(/.test(line)) { type='blankButton'; const m=line.match(/UiBlankButton\(([^,]+),\s*([^\)]+)\)/); if(m){ const a=resolveToken(m[1]); const b=resolveToken(m[2]); if(a!==undefined) w=a; if(b!==undefined) h=b; } }
+      else if (/^if UiTextButton\(/.test(line)) { type='button'; const m=line.match(/UiTextButton\((".*?"),(\s*[^,]+),(\s*[^\)]+)\)/); if(m){props.text=m[1].replace(/^"|"$/g,''); const a=resolveToken(m[2]); const b=resolveToken(m[3]); if(a!==undefined) w=a; if(b!==undefined) h=b;} }
+      else if (/UiSlider\(/.test(line)) { type='slider'; const m=line.match(/UiSlider\("dot.png",\s*"x",\s*(\w+)\s*or\s*(\d+),(\s*[^,]+),(\s*[^\)]+)\)/); if(m){props.var=m[1]; props.min=+m[3]; const a=resolveToken(m[4]); const b=resolveToken(m[5]); w=200; h=24; if(a!==undefined) props.min = a; if(b!==undefined) props.max = b; } }
       else return null;
       let x = ctx.offX; let y = ctx.offY;
-      // Apply metadata overrides if any
       if (ctx.meta?.w) { w = ctx.meta.w; }
       if (ctx.meta?.h) { h = ctx.meta.h; }
       return { id: ctx.meta?.id, type, x, y, w, h, props, metaName: ctx.meta?.name };
@@ -283,11 +332,10 @@ export const useProject = create<ProjectState & Actions>((set: any, get: any) =>
       const mt = t.match(reTranslate);
       if (mt) {
         const ax = mt[1].trim(); const ay = mt[2].trim();
-        if (num.test(ax) && num.test(ay)) {
-          cur().offX += parseFloat(ax);
-          cur().offY += parseFloat(ay);
-        } else {
-          // Non-numeric translate resets to 0 as we cannot evaluate dynamic expressions
+        const rx = resolveToken(ax); const ry = resolveToken(ay);
+        if (rx !== undefined && ry !== undefined) {
+          cur().offX += rx;
+          cur().offY += ry;
         }
         continue;
       }
