@@ -105,27 +105,107 @@ export const useProject = create<ProjectState & Actions>((set: any, get: any) =>
   })),
   regenCode: () => {
     const state = get();
-    const generated = generateLua(state);
-    const markerStart = '--TDGUI-BEGIN';
-    const markerEnd = '--TDGUI-END';
-    let current = state.code || '';
-    let next: string;
-    if (current.includes(markerStart) && current.includes(markerEnd)) {
-      // Replace only inside markers
-      const pattern = new RegExp(markerStart + '[\\s\\S]*?' + markerEnd);
-      next = current.replace(pattern, markerStart + '\n' + generated + '\n' + markerEnd);
-    } else if (/-- Auto-generated Teardown UI code/.test(current) && !current.includes(markerStart)) {
-      // Old fully-generated buffer: wrap it with markers
-      next = markerStart + '\n' + generated + '\n' + markerEnd;
-    } else if (current.trim().length === 0 || current.startsWith('-- code will appear here')) {
-      // Empty / placeholder: just output generated wrapped
-      next = markerStart + '\n' + generated + '\n' + markerEnd;
-    } else {
-      // Append to existing user code
-      const sep = current.endsWith('\n') ? '' : '\n';
-      next = current + sep + '\n' + markerStart + '\n' + generated + '\n' + markerEnd;
+    const generatedFull = generateLua(state); // fallback full generation
+    const current = state.code || '';
+
+    // Build new block strings per element id
+    const blockMap: Record<string,string> = {};
+    state.rootOrder.forEach((id: string) => {
+      const el = state.elements[id]; if (!el) return;
+      const block = (() => {
+        const meta = `--TDGUI id=${el.id} name=${encodeURIComponent(el.name)} type=${el.type} w=${Math.round(el.w)} h=${Math.round(el.h)}`;
+        // reuse emit logic by generating a mini project state with only this element
+        // Quick inline emission (duplicated logic minimal):
+        const lines: string[] = [];
+        lines.push('UiPush()');
+        lines.push(`UiTranslate(${Math.round(el.x)}, ${Math.round(el.y)})`);
+        switch (el.type) {
+          case 'text': lines.push(`UiText(${JSON.stringify(el.props.text || 'Text')})`); break;
+          case 'rect': lines.push(`UiRect(${Math.round(el.w)}, ${Math.round(el.h)})`); break;
+          case 'rectOutline': lines.push(`UiRectOutline(${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.thickness||2)})`); break;
+          case 'roundrect': lines.push(`UiRoundedRect(${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.radius||8)})`); break;
+          case 'roundedRectOutline': lines.push(`UiRoundedRectOutline(${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.radius||8)}, ${Math.round(el.props.thickness||2)})`); break;
+          case 'circle': lines.push(`UiCircle(${Math.round(el.props.radius|| (el.w/2))})`); break;
+          case 'circleOutline': lines.push(`UiCircleOutline(${Math.round(el.props.radius|| (el.w/2))}, ${Math.round(el.props.thickness||2)})`); break;
+          case 'image': lines.push(`UiImage(${JSON.stringify(el.props.path || 'ui/example.png')})`); break;
+          case 'imageBox': lines.push(`UiImageBox(${JSON.stringify(el.props.path||'ui/example.png')}, ${Math.round(el.w)}, ${Math.round(el.h)}, ${Math.round(el.props.borderW||10)}, ${Math.round(el.props.borderH||10)})`); break;
+          case 'button': { const label = JSON.stringify(el.props.text||'Button'); const handler = el.props.onPress || ('on'+el.name.replace(/[^A-Za-z0-9]/g,'')+'Press'); lines.push(`if UiTextButton(${label}, ${Math.round(el.w)}, ${Math.round(el.h)}) then ${handler}() end`); break; }
+          case 'imageButton': { const handler = el.props.onPress || ('on'+el.name.replace(/[^A-Za-z0-9]/g,'')+'Press'); lines.push(`if UiImageButton(${JSON.stringify(el.props.path||'ui/example.png')}) then ${handler}() end`); break; }
+          case 'blankButton': { const handler = el.props.onPress || ('on'+el.name.replace(/[^A-Za-z0-9]/g,'')+'Press'); lines.push(`if UiBlankButton(${Math.round(el.w)}, ${Math.round(el.h)}) then ${handler}() end`); break; }
+          case 'slider': { const varName = el.props.var || el.name + 'Val'; const onChange = el.props.onChange || ('on'+el.name.replace(/[^A-Za-z0-9]/g,'')+'Change'); lines.push(`${varName}, __done = UiSlider("dot.png", "x", ${varName} or ${(el.props.min||0)}, ${(el.props.min||0)}, ${(el.props.max||100)})`); lines.push(`if __done then ${onChange}(${varName}) end`); break; }
+          case 'mute': lines.push('UiMute(1)'); break;
+          case 'colorFilter': lines.push(`UiColorFilter(${el.props.r||1}, ${el.props.g||1}, ${el.props.b||1}, ${el.props.a??1})`); break;
+          case 'color': lines.push(`UiColor(${el.props.r||1}, ${el.props.g||1}, ${el.props.b||1}, ${el.props.a??1})`); break;
+          case 'disableInput': lines.push('UiDisableInput()'); break;
+          case 'buttonHoverColor': lines.push(`UiButtonHoverColor(${el.props.r||0.8}, ${el.props.g||0.8}, ${el.props.b||0.8}, ${el.props.a??1})`); break;
+          case 'setCursorState': lines.push(`UiSetCursorState(${el.props.state||0})`); break;
+          case 'ignoreNavigation': lines.push('UiIgnoreNavigation()'); break;
+          case 'font': lines.push(`UiFont(${JSON.stringify(el.props.path||'regular.ttf')}, ${el.props.size||18})`); break;
+          case 'align': lines.push(`UiAlign(${JSON.stringify(el.props.align||'left')})`); break;
+          case 'textOutline': lines.push(`UiTextOutline(${el.props.r||0}, ${el.props.g||0}, ${el.props.b||0}, ${el.props.a??1}, ${el.props.thickness||0.1})`); break;
+          case 'wordWrap': lines.push(`UiWordWrap(${el.props.width||600})`); break;
+          case 'textAlignment': lines.push(`UiTextAlignment(${JSON.stringify(el.props.alignment||'left')})`); break;
+          case 'drawLater': lines.push('-- UiDrawLater not supported in static export'); break;
+        }
+        lines.push('UiPop()');
+        return meta + '\n' + lines.join('\n');
+      })();
+      blockMap[id] = block;
+    });
+
+    // Regex to find existing metadata blocks
+    const blockRegex = /(\n?)([ \t]*)--TDGUI id=([^\s]+)[^\n]*\n([ \t]*UiPush\(\)[\s\S]*?UiPop\(\))/g;
+    const seenIds = new Set<string>();
+    let replacedSomething = false;
+    let updated = current.replace(blockRegex, (match: string, leadingNL: string, indent: string, id: string) => {
+      const newBlock = blockMap[id];
+      if (!newBlock) {
+        // Element removed in UI: drop block
+        replacedSomething = true;
+        return leadingNL || '';
+      }
+      seenIds.add(id);
+      replacedSomething = true;
+      // Re-indent new block with existing indent
+      const indented = newBlock.split('\n').map((l,i)=> indent + l).join('\n');
+      return (leadingNL||'') + indented;
+    });
+
+    // Determine insertion point for new elements not present in original code
+    const missing = state.rootOrder.filter((id: string) => !seenIds.has(id));
+    if (missing.length) {
+      // Build insertion text
+      const insertion = missing.map((id: string) => blockMap[id]).join('\n');
+      // Try to insert inside draw() before its final UiPop()
+      const drawMatch = /function\s+draw\s*\([^)]*\)([\s\S]*?)end/gm.exec(updated);
+      if (drawMatch) {
+        // Find last UiPop() inside draw
+        const startIdx = drawMatch.index;
+        const drawBodyStart = updated.indexOf('{', startIdx); // not Lua, fallback simple search
+        const lastUiPopIdx = updated.lastIndexOf('UiPop()', updated.indexOf('end', startIdx));
+        if (lastUiPopIdx !== -1) {
+          const before = updated.slice(0, lastUiPopIdx);
+          const after = updated.slice(lastUiPopIdx);
+          const indentMatch = /^(\s*)UiPop\(\)/m.exec(after);
+          const indent = indentMatch ? indentMatch[1] : '    ';
+          updated = before + insertion.split('\n').map((l: string)=> indent + l).join('\n') + '\n' + after;
+          replacedSomething = true;
+        } else {
+          // Append at end of file
+          updated += '\n' + insertion;
+        }
+      } else {
+        // No draw() function found – append
+        updated += '\n' + insertion;
+      }
     }
-    set({ code: next });
+
+    // Fallback: if nothing was replaced and no metadata present, use marker approach or full generation
+    if (!replacedSomething && !/--TDGUI id=/.test(current)) {
+      updated = generatedFull; // full overwrite only when we have no existing metadata
+    }
+
+    set({ code: updated });
   },
   setElementPos: (id: string, x: number, y: number) => set(produce((s: ProjectState) => {
     const el = s.elements[id]; if (!el) return; el.x = x; el.y = y;

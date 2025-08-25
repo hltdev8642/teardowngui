@@ -21,11 +21,18 @@ export const Canvas: React.FC = () => {
 
   const beginDrag = (e: React.MouseEvent, el: BaseElement) => {
     e.stopPropagation();
-    const multi = e.shiftKey && selection.includes(el.id) ? selection : [el.id];
-    setSel(multi.includes(el.id)? multi : [el.id]);
+    const isMod = e.shiftKey || e.metaKey || e.ctrlKey;
+    const already = selection.includes(el.id);
+    let newSelection: string[];
+    if (isMod) {
+      newSelection = already ? selection : [...selection, el.id];
+    } else {
+      newSelection = already ? selection : [el.id];
+    }
+    setSel(newSelection);
     const startRects: Record<string,{x:number,y:number}> = {};
-    (multi.includes(el.id)? multi : [el.id]).forEach(id=>{ const el2 = elements[id]; if (el2) startRects[id] = {x:el2.x,y:el2.y}; });
-    setDrag({ ids: multi.includes(el.id)? multi : [el.id], startMouseX: e.clientX, startMouseY: e.clientY, startRects, dup: e.altKey });
+    newSelection.forEach(id=>{ const el2 = elements[id]; if (el2) startRects[id] = {x:el2.x,y:el2.y}; });
+    setDrag({ ids: newSelection, startMouseX: e.clientX, startMouseY: e.clientY, startRects, dup: e.altKey });
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
@@ -62,22 +69,24 @@ export const Canvas: React.FC = () => {
 
   // Keyboard nudging
   const onKey = useCallback((e: KeyboardEvent) => {
+    // Ignore if focus is inside an editable field
+    const ae = document.activeElement as HTMLElement | null;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
     if (!selection.length) return;
     if (e.key === 'Delete' || e.key === 'Backspace') {
       useProject.getState().removeSelected();
       regen();
+      e.preventDefault();
       return;
     }
     const step = e.shiftKey ? 10 : 1;
-    let used = false;
     const dx = (e.key === 'ArrowRight') ? step : (e.key === 'ArrowLeft') ? -step : 0;
     const dy = (e.key === 'ArrowDown') ? step : (e.key === 'ArrowUp') ? -step : 0;
     if (dx || dy) {
       selection.forEach(id=> moveElement(id, dx, dy));
       regen();
-      used = true;
+      e.preventDefault();
     }
-    if (used) { e.preventDefault(); }
   }, [selection, moveElement, regen]);
 
   useEffect(()=> {
