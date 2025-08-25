@@ -64,6 +64,16 @@ npm run build
 ## Exporting Code
 Use the "Lua Code" panel, copy into your mod script (ensure calls only from `draw()`). Place variable/function stubs above.
 
+## Lua Import
+Drag & drop a `.lua` file (or use Import Lua button) into the code panel. The parser scans for blocks:
+```
+UiPush()
+  UiTranslate(x,y)
+  ... Ui* calls ...
+UiPop()
+```
+It reconstructs elements (position, type, size via metadata if present) and updates the canvas. Unknown lines are ignored. If parser finds none, existing elements are preserved.
+
 ## Notes
 Teardown UI is immediate: no retained layout. The generator outputs a deterministic sequence of calls each frame. For dynamic localization or runtime text, bind element's `text` to a variable name; the generator references that variable instead of a string literal.
 

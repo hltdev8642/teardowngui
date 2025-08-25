@@ -118,101 +118,103 @@ export const useProject = create<ProjectState & Actions>((set: any, get: any) =>
     s.selection = [];
   })),
   parseCode: (code: string) => {
-    // Very simple parser for generated blocks
-    const lines = code.split(/\r?\n/).map(l=>l.trim());
-    interface PEl { type: ElementType; x:number; y:number; w:number; h:number; props: Record<string,any>; }
+    // Improved parser: scan all UiPush/UiPop root-level blocks and extract first-level UiTranslate + draw call
+    const rawLines = code.split(/\r?\n/);
+    const lines = rawLines.map(l=>l.replace(/\t/g,'    '));
+    interface PEl { type: ElementType; x:number; y:number; w:number; h:number; props: Record<string,any>; metaName?: string; metaW?: number; metaH?: number; }
     const parsed: PEl[] = [];
+
+    // Stack-based block detection
+    let depth = 0;
+    interface Block { start:number; depthAtStart:number; }
+    const blocks: { start:number; end:number; depth:number }[] = [];
+    const stack: Block[] = [];
     for (let i=0;i<lines.length;i++) {
-      // metadata extraction
-      if (lines[i].startsWith('--TDGUI')) {
-        // continue; metadata line will be handled when next UiPush appears
-      }
-      if (lines[i] === 'UiPush()' && /^UiTranslate\(/.test(lines[i+1]||'')) {
-        // Look backwards for metadata
-        let metaName: string | undefined; let metaW: number | undefined; let metaH: number | undefined;
-        for (let k=i-1; k>=0 && k>=i-3; k--) {
-          const ml = lines[k];
-          const mm = ml?.match(/--TDGUI.*name=([^\s]+).*type=([\w]+).*w=(\d+).*h=(\d+)/);
-          if (mm) { metaName = decodeURIComponent(mm[1]); metaW = +mm[3]; metaH = +mm[4]; break; }
+      const t = lines[i].trim();
+      if (t.startsWith('--TDGUI')) { /* metadata comment, handled later */ }
+      if (/^UiPush\(\)/.test(t)) {
+        stack.push({ start:i, depthAtStart: depth });
+        depth++;
+      } else if (/^UiPop\(\)/.test(t)) {
+        depth = Math.max(0, depth-1);
+        const blk = stack.pop();
+        if (blk && blk.depthAtStart === 0) {
+          blocks.push({ start: blk.start, end: i, depth:0 });
         }
-        const tLine = lines[i+1];
-        const m = tLine.match(/UiTranslate\(([-\d]+),\s*([-\d]+)\)/);
-        if (!m) continue;
-        const x = parseInt(m[1],10); const y = parseInt(m[2],10);
-        let j=i+2; let body: string[] = [];
-        for (; j<lines.length; j++) { if (lines[j] === 'UiPop()') break; body.push(lines[j]); }
-        if (body.length) {
-          const first = body[0];
-          let el: PEl | null = null;
-          let w=200, h=50;
-          if (/^UiText\(/.test(first)) {
-            const txt = first.match(/^UiText\((.*)\)/);
-            el = { type:'text', x,y,w:200,h:30, props:{ text: txt? txt[1].replace(/^"|"$/g,''): 'Text'} } as any;
-          } else if (/^UiRectOutline\(/.test(first)) {
-            const mm = first.match(/UiRectOutline\((\d+),\s*(\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[1]); h=parseInt(mm[2]); const thickness=parseInt(mm[3]); el = { type:'rectOutline', x,y,w,h, props:{ thickness } } as any; }
-          } else if (/^UiRect\(/.test(first)) {
-            const mm = first.match(/UiRect\((\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[1]); h=parseInt(mm[2]); el = { type:'rect', x,y,w,h, props:{} } as any; }
-          } else if (/^UiRoundedRectOutline\(/.test(first)) {
-            const mm = first.match(/UiRoundedRectOutline\((\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[1]); h=parseInt(mm[2]); const radius=parseInt(mm[3]); const thickness=parseInt(mm[4]); el = { type:'roundedRectOutline', x,y,w,h, props:{ radius, thickness } } as any; }
-          } else if (/^UiRoundedRect\(/.test(first)) {
-            const mm = first.match(/UiRoundedRect\((\d+),\s*(\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[1]); h=parseInt(mm[2]); const radius=parseInt(mm[3]); el = { type:'roundrect', x,y,w,h, props:{ radius } } as any; }
-          } else if (/^UiCircleOutline\(/.test(first)) {
-            const mm = first.match(/UiCircleOutline\((\d+),\s*(\d+)\)/); if (mm){ const radius=parseInt(mm[1]); const thickness=parseInt(mm[2]); w=radius*2; h=radius*2; el = { type:'circleOutline', x,y,w,h, props:{ radius, thickness } } as any; }
-          } else if (/^UiCircle\(/.test(first)) {
-            const mm = first.match(/UiCircle\((\d+)\)/); if (mm){ const radius=parseInt(mm[1]); w=radius*2; h=radius*2; el = { type:'circle', x,y,w,h, props:{ radius } } as any; }
-          } else if (/^UiImageBox\(/.test(first)) {
-            const mm = first.match(/UiImageBox\((".*?"),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[2]); h=parseInt(mm[3]); const borderW=parseInt(mm[4]); const borderH=parseInt(mm[5]); const path = mm[1].replace(/^"|"$/g,''); el = { type:'imageBox', x,y,w,h, props:{ path, borderW, borderH } } as any; }
-          } else if (/^UiImageButton\(/.test(first)) {
-            const mm = first.match(/UiImageButton\((".*?")\)/); if (mm){ const path = mm[1].replace(/^"|"$/g,''); el = { type:'imageButton', x,y,w:64,h:64, props:{ path } } as any; }
-          } else if (/^UiImage\(/.test(first)) {
-            const mm = first.match(/UiImage\((".*?")\)/); if (mm){ const path = mm[1].replace(/^"|"$/g,''); el = { type:'image', x,y,w:128,h:128, props:{ path } } as any; }
-          } else if (/^UiBlankButton\(/.test(first)) {
-            const mm = first.match(/UiBlankButton\((\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[1]); h=parseInt(mm[2]); el = { type:'blankButton', x,y,w,h, props:{} } as any; }
-          } else if (/^if UiTextButton\(/.test(first)) {
-            const mm = first.match(/UiTextButton\((".*?"),\s*(\d+),\s*(\d+)\)/); if (mm){ w=parseInt(mm[2]); h=parseInt(mm[3]); const text = mm[1].replace(/^"|"$/g,''); el = { type:'button', x,y,w,h, props:{ text } } as any; }
-          } else if (/UiSlider\(/.test(first)) {
-            const mm = first.match(/UiSlider\("dot.png",\s*"x",\s*(\w+)\s*or\s*(\d+),\s*(\d+),\s*(\d+)\)/);
-            if (mm) { const vari = mm[1]; const min = parseInt(mm[3]); const max = parseInt(mm[4]); el = { type:'slider', x,y,w:200,h:24, props:{ var: vari, min, max } } as any; }
-          } else if (/^UiMute\(/.test(first)) {
-            el = { type:'mute', x,y,w:0,h:0, props:{} } as any;
-          } else if (/^UiColorFilter\(/.test(first)) {
-            const mm = first.match(/UiColorFilter\(([-\d\.]+),\s*([-\d\.]+),\s*([-\d\.]+),\s*([-\d\.]+)\)/); if (mm){ el = { type:'colorFilter', x,y,w:0,h:0, props:{ r:+mm[1], g:+mm[2], b:+mm[3], a:+mm[4] } } as any; }
-          } else if (/^UiColor\(/.test(first)) {
-            const mm = first.match(/UiColor\(([-\d\.]+),\s*([-\d\.]+),\s*([-\d\.]+)(?:,\s*([-\d\.]+))?\)/); if (mm){ el = { type:'color', x,y,w:0,h:0, props:{ r:+mm[1], g:+mm[2], b:+mm[3], a: mm[4]? +mm[4]:1 } } as any; }
-          } else if (/^UiDisableInput\(/.test(first)) {
-            el = { type:'disableInput', x,y,w:0,h:0, props:{} } as any;
-          } else if (/^UiButtonHoverColor\(/.test(first)) {
-            const mm = first.match(/UiButtonHoverColor\(([-\d\.]+),\s*([-\d\.]+),\s*([-\d\.]+),\s*([-\d\.]+)\)/); if (mm){ el = { type:'buttonHoverColor', x,y,w:0,h:0, props:{ r:+mm[1], g:+mm[2], b:+mm[3], a:+mm[4] } } as any; }
-          } else if (/^UiSetCursorState\(/.test(first)) {
-            const mm = first.match(/UiSetCursorState\((\d+)\)/); if (mm){ el = { type:'setCursorState', x,y,w:0,h:0, props:{ state:+mm[1] } } as any; }
-          } else if (/^UiIgnoreNavigation\(/.test(first)) {
-            el = { type:'ignoreNavigation', x,y,w:0,h:0, props:{} } as any;
-          } else if (/^UiFont\(/.test(first)) {
-            const mm = first.match(/UiFont\((".*?"),\s*(\d+)\)/); if (mm){ const path = mm[1].replace(/^"|"$/g,''); const size = parseInt(mm[2]); el = { type:'font', x,y,w:0,h:0, props:{ path, size } } as any; }
-          } else if (/^UiAlign\(/.test(first)) {
-            const mm = first.match(/UiAlign\((".*?")\)/); if (mm){ const align = mm[1].replace(/^"|"$/g,''); el = { type:'align', x,y,w:0,h:0, props:{ align } } as any; }
-          } else if (/^UiTextOutline\(/.test(first)) {
-            const mm = first.match(/UiTextOutline\(([-\d\.]+),\s*([-\d\.]+),\s*([-\d\.]+),\s*([-\d\.]+),\s*([-\d\.]+)\)/); if (mm){ el = { type:'textOutline', x,y,w:0,h:0, props:{ r:+mm[1], g:+mm[2], b:+mm[3], a:+mm[4], thickness:+mm[5] } } as any; }
-          } else if (/^UiWordWrap\(/.test(first)) {
-            const mm = first.match(/UiWordWrap\((\d+)\)/); if (mm){ el = { type:'wordWrap', x,y,w:0,h:0, props:{ width:+mm[1] } } as any; }
-          } else if (/^UiTextAlignment\(/.test(first)) {
-            const mm = first.match(/UiTextAlignment\((".*?")\)/); if (mm){ const alignment = mm[1].replace(/^"|"$/g,''); el = { type:'textAlignment', x,y,w:0,h:0, props:{ alignment } } as any; }
-          }
-          if (el) { if (metaName) { (el as any).metaName = metaName; if (metaW !== undefined && metaH !== undefined) { el.w = metaW; el.h = metaH; } } parsed.push(el); }
-        }
-        i = j;
       }
     }
-    set((prev: any) => {
-      if (parsed.length === 0) {
-        // Do not destroy existing if nothing recognized; just update code text
-        return { code };
+
+    // Helper: parse element from block
+    function parseBlock(block:{start:number; end:number}) {
+      // Collect metadata comment immediately preceding block
+      let metaLine: string | undefined;
+      for (let k = block.start-1; k >= 0 && k >= block.start-5; k--) {
+        const ml = lines[k].trim();
+        if (ml.startsWith('--TDGUI')) { metaLine = ml; break; }
+        if (ml.length && !ml.startsWith('--')) break; // stop at unrelated code
       }
+      let metaName: string | undefined; let metaW: number | undefined; let metaH: number | undefined;
+      if (metaLine) {
+        const mm = metaLine.match(/--TDGUI.*name=([^\s]+).*type=([\w]+)(?:.*w=(\d+).*h=(\d+))?/);
+        if (mm) { metaName = decodeURIComponent(mm[1]); if (mm[3]) metaW = +mm[3]; if (mm[4]) metaH = +mm[4]; }
+      }
+
+      // Determine top-level (relative depth 1) statements inside block
+      let relDepth = 0;
+      let tx: number | undefined; let ty: number | undefined;
+      let drawLine: string | undefined;
+      for (let i = block.start+1; i < block.end; i++) {
+        const line = lines[i].trim();
+        if (/^UiPush\(\)/.test(line)) { relDepth++; continue; }
+        if (/^UiPop\(\)/.test(line)) { if (relDepth>0) relDepth--; continue; }
+        if (relDepth>0) continue; // Only look at first-level inside this push
+        // Translate
+        if (tx === undefined) {
+          const m = line.match(/UiTranslate\(([-\d]+)\s*,\s*([-\d]+)\)/);
+            if (m) { tx = parseInt(m[1],10); ty = parseInt(m[2],10); continue; }
+        }
+        if (tx !== undefined && !drawLine && /^Ui(?!Push|Pop|Translate|Window|SafeMargins|Mute|ColorFilter|Color|DisableInput|ButtonHoverColor|SetCursorState|IgnoreNavigation|Font|Align|TextOutline|WordWrap|TextAlignment)/.test(line)) {
+          drawLine = line; // first candidate drawing call
+          break;
+        }
+        // Also allow meta-only elements (color, etc.) if no drawing but we still have translate
+        if (tx !== undefined && !drawLine && /^(UiText|UiRect|UiRoundedRect|UiCircle|UiImage|UiImageBox|UiBlankButton|if UiTextButton|UiSlider|UiRectOutline|UiRoundedRectOutline|UiCircleOutline|UiImageButton)/.test(line)) {
+          drawLine = line; break;
+        }
+      }
+      if (tx === undefined || ty === undefined || !drawLine) return; // not an element pattern
+      // Build element from drawLine
+      let w=200,h=50; let type:ElementType = 'rect'; let props: Record<string,any> = {};
+      const l = drawLine;
+      if (/^UiText\(/.test(l)) { type='text'; props.text = (l.match(/^UiText\((.*)\)/)?.[1]||'').replace(/^"|"$/g,''); h=30; }
+      else if (/^UiRectOutline\(/.test(l)) { type='rectOutline'; const mm = l.match(/UiRectOutline\((\d+),\s*(\d+),\s*(\d+)\)/); if (mm){ w=+mm[1]; h=+mm[2]; props.thickness=+mm[3]; } }
+      else if (/^UiRect\(/.test(l)) { type='rect'; const mm = l.match(/UiRect\((\d+),\s*(\d+)\)/); if (mm){ w=+mm[1]; h=+mm[2]; } }
+      else if (/^UiRoundedRectOutline\(/.test(l)) { type='roundedRectOutline'; const mm = l.match(/UiRoundedRectOutline\((\d+),(\s*\d+),(\s*\d+),(\s*\d+)\)/); if (mm){ w=+mm[1]; h=+mm[2]; props.radius=+mm[3]; props.thickness=+mm[4]; } }
+      else if (/^UiRoundedRect\(/.test(l)) { type='roundrect'; const mm = l.match(/UiRoundedRect\((\d+),(\s*\d+),(\s*\d+)\)/); if (mm){ w=+mm[1]; h=+mm[2]; props.radius=+mm[3]; } }
+      else if (/^UiCircleOutline\(/.test(l)) { type='circleOutline'; const mm = l.match(/UiCircleOutline\((\d+),\s*(\d+)\)/); if (mm){ const r=+mm[1]; props.radius=r; props.thickness=+mm[2]; w=h=r*2; } }
+      else if (/^UiCircle\(/.test(l)) { type='circle'; const mm = l.match(/UiCircle\((\d+)\)/); if (mm){ const r=+mm[1]; props.radius=r; w=h=r*2; } }
+      else if (/^UiImageBox\(/.test(l)) { type='imageBox'; const mm = l.match(/UiImageBox\((".*?"),(\s*\d+),(\s*\d+),(\s*\d+),(\s*\d+)\)/); if (mm){ props.path=mm[1].replace(/^"|"$/g,''); w=+mm[2]; h=+mm[3]; props.borderW=+mm[4]; props.borderH=+mm[5]; } }
+      else if (/^UiImageButton\(/.test(l)) { type='imageButton'; const mm = l.match(/UiImageButton\((".*?")\)/); if (mm){ props.path=mm[1].replace(/^"|"$/g,''); w=h=64; } }
+      else if (/^UiImage\(/.test(l)) { type='image'; const mm = l.match(/UiImage\((".*?")\)/); if (mm){ props.path=mm[1].replace(/^"|"$/g,''); w=h=128; } }
+      else if (/^UiBlankButton\(/.test(l)) { type='blankButton'; const mm = l.match(/UiBlankButton\((\d+),\s*(\d+)\)/); if (mm){ w=+mm[1]; h=+mm[2]; } }
+      else if (/^if UiTextButton\(/.test(l)) { type='button'; const mm = l.match(/UiTextButton\((".*?"),\s*(\d+),\s*(\d+)\)/); if (mm){ props.text=mm[1].replace(/^"|"$/g,''); w=+mm[2]; h=+mm[3]; } }
+      else if (/UiSlider\(/.test(l)) { type='slider'; const mm = l.match(/UiSlider\("dot.png",\s*"x",\s*(\w+)\s*or\s*(\d+),\s*(\d+),\s*(\d+)\)/); if (mm){ props.var=mm[1]; props.min=+mm[3]; props.max=+mm[4]; w=200; h=24; } }
+      else return;
+      const el: PEl = { type, x: tx!, y: ty!, w, h, props };
+      if (metaName) { el.metaName = metaName; if (metaW) el.w = metaW; if (metaH) el.h = metaH; }
+      parsed.push(el);
+    }
+
+    blocks.forEach(parseBlock);
+
+    // Apply results
+    set(() => {
+      if (!parsed.length) return { code }; // nothing recognized
       const elements: Record<string, BaseElement> = {};
       const rootOrder: string[] = [];
       parsed.forEach(p => {
         const id = nanoid(6);
-        const name = (p as any).metaName ? (p as any).metaName : p.type+'_'+id;
+        const name = p.metaName || p.type + '_' + id;
         elements[id] = { id, type: p.type, name, x: p.x, y: p.y, w: p.w, h: p.h, props: p.props } as any;
         rootOrder.push(id);
       });
