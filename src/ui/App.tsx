@@ -21,6 +21,9 @@ export const App: React.FC = () => {
         {['text','rect','rectOutline','roundrect','roundedRectOutline','circle','circleOutline','image','imageBox','button','imageButton','blankButton','slider'].map(t=> (
           <button key={t} onClick={()=>add(t as ElementType)} style={{padding:'6px 8px'}}>{t}</button>
         ))}
+        {['mute','colorFilter','color','disableInput','buttonHoverColor','setCursorState','ignoreNavigation','font','align','textOutline','wordWrap','textAlignment','drawLater'].map(t=> (
+          <button key={t} onClick={()=>add(t as ElementType)} style={{padding:'4px 6px', fontSize:11}}>{t}</button>
+        ))}
         <button onClick={()=>regen()} style={{marginTop:12}}>Regenerate Code</button>
         <div style={{marginTop:'auto', fontSize:12, opacity:0.6}}>Teardown UI Layout Designer v0.1</div>
       </div>

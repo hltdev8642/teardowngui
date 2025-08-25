@@ -113,11 +113,24 @@ export const Canvas: React.FC = () => {
                          color:'#ddd', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center',
                          userSelect:'none', cursor:'move', transition: drag? 'none':'border-color 0.1s'}}>
               {el.type === 'text' || el.type==='button' ? (el.props.text || el.name) :
-                el.type === 'slider' ? 'slider' :
-                el.type === 'image' ? 'img' :
+                el.type === 'slider' ? (el.name) :
+                el.type === 'image' ? (el.name) :
                 el.type === 'imageButton' ? 'imgBtn' :
                 el.type === 'blankButton' ? '' :
                 el.type === 'imageBox' ? 'imgBox' :
+                el.type === 'mute' ? 'mute' :
+                el.type === 'colorFilter' ? 'colorF' :
+                el.type === 'color' ? 'color' :
+                el.type === 'disableInput' ? 'noInput' :
+                el.type === 'buttonHoverColor' ? 'hoverColor' :
+                el.type === 'setCursorState' ? 'cursor' :
+                el.type === 'ignoreNavigation' ? 'ignoreNav' :
+                el.type === 'font' ? 'font' :
+                el.type === 'align' ? 'align' :
+                el.type === 'textOutline' ? 'txtOutline' :
+                el.type === 'wordWrap' ? 'wrap' :
+                el.type === 'textAlignment' ? 'txtAlign' :
+                el.type === 'drawLater' ? 'drawLater' :
                 el.type}
               {selected && (
                 <>

@@ -1,6 +1,6 @@
 import { ProjectState, BaseElement } from './types';
 
-function emitElement(el: BaseElement, depth: number, all: Record<string, BaseElement>): string {
+function emitElement(el: BaseElement, depth: number): string {
   const pad = '    '.repeat(depth);
   const lines: string[] = [];
   const t = (s: string) => lines.push(pad + s);
@@ -41,6 +41,19 @@ function emitElement(el: BaseElement, depth: number, all: Record<string, BaseEle
       const onChange = el.props.onChange || 'on' + el.name.replace(/[^A-Za-z0-9]/g,'') + 'Change';
       t(`${varName}, __done = UiSlider("dot.png", "x", ${varName} or ${(el.props.min||0)}, ${(el.props.min||0)}, ${(el.props.max||100)})`);
       t(`if __done then ${onChange}(${varName}) end`); break; }
+    case 'mute': t('UiMute(1)'); break;
+    case 'colorFilter': t(`UiColorFilter(${el.props.r||1}, ${el.props.g||1}, ${el.props.b||1}, ${el.props.a??1})`); break;
+    case 'color': t(`UiColor(${el.props.r||1}, ${el.props.g||1}, ${el.props.b||1}, ${el.props.a??1})`); break;
+    case 'disableInput': t('UiDisableInput()'); break;
+    case 'buttonHoverColor': t(`UiButtonHoverColor(${el.props.r||0.8}, ${el.props.g||0.8}, ${el.props.b||0.8}, ${el.props.a??1})`); break;
+    case 'setCursorState': t(`UiSetCursorState(${el.props.state||0})`); break;
+    case 'ignoreNavigation': t('UiIgnoreNavigation()'); break;
+    case 'font': t(`UiFont(${JSON.stringify(el.props.path||'regular.ttf')}, ${el.props.size||18})`); break;
+    case 'align': t(`UiAlign(${JSON.stringify(el.props.align||'left')})`); break;
+    case 'textOutline': t(`UiTextOutline(${el.props.r||0}, ${el.props.g||0}, ${el.props.b||0}, ${el.props.a??1}, ${el.props.thickness||0.1})`); break;
+    case 'wordWrap': t(`UiWordWrap(${el.props.width||600})`); break;
+    case 'textAlignment': t(`UiTextAlignment(${JSON.stringify(el.props.alignment||'left')})`); break;
+    case 'drawLater': t('-- UiDrawLater not supported in static export'); break;
   }
   t('UiPop()');
   return lines.join('\n');
@@ -57,7 +70,9 @@ export function generateLua(state: ProjectState): string {
   for (const id of state.rootOrder) {
     const el = state.elements[id];
     if (!el) continue;
-    lines.push(emitElement(el, 2, state.elements));
+    // metadata comment for round-trip parsing (includes size)
+    lines.push(`        --TDGUI id=${el.id} name=${encodeURIComponent(el.name)} type=${el.type} w=${Math.round(el.w)} h=${Math.round(el.h)}`);
+    lines.push(emitElement(el, 2));
   }
   lines.push('    UiPop()');
   lines.push('end');

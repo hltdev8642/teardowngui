@@ -56,6 +56,53 @@ export const Inspector: React.FC = () => {
           <input type='number' value={el.props.thickness??2} onChange={(e:any)=>set('thickness', Number(e.target.value))} style={{width:'100%'}} />
         </label>
       )}
+      {el.type === 'colorFilter' || el.type==='color' || el.type==='buttonHoverColor' ? (
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)', gap:4, marginTop:8}}>
+          {['r','g','b','a'].map(ch => (
+            <input key={ch} type='number' min={0} max={1} step={0.05} value={el.props[ch]??1} onChange={(e:any)=>set(ch, parseFloat(e.target.value))} />
+          ))}
+        </div>
+      ):null}
+      {el.type === 'font' && (
+        <>
+          <label style={{display:'block', marginTop:8}}>Font Path<br/>
+            <input value={el.props.path||''} onChange={(e:any)=>set('path', e.target.value)} style={{width:'100%'}} />
+          </label>
+          <label style={{display:'block', marginTop:8}}>Size<br/>
+            <input type='number' value={el.props.size||18} onChange={(e:any)=>set('size', Number(e.target.value))} style={{width:'100%'}} />
+          </label>
+        </>
+      )}
+      {el.type === 'align' && (
+        <label style={{display:'block', marginTop:8}}>Align<br/>
+          <input value={el.props.align||'left'} onChange={(e:any)=>set('align', e.target.value)} style={{width:'100%'}} />
+        </label>
+      )}
+      {el.type === 'textOutline' && (
+        <>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)', gap:4, marginTop:8}}>
+            {['r','g','b','a'].map(ch => (
+              <input key={ch} type='number' min={0} max={1} step={0.05} value={el.props[ch]??(ch==='a'?1:0)} onChange={(e:any)=>set(ch, parseFloat(e.target.value))} />
+            ))}
+          </div>
+          <label style={{display:'block', marginTop:8}}>Thickness<br/>
+            <input type='number' step={0.05} value={el.props.thickness??0.1} onChange={(e:any)=>set('thickness', parseFloat(e.target.value))} />
+          </label>
+        </>
+      )}
+      {el.type === 'wordWrap' && (
+        <label style={{display:'block', marginTop:8}}>Width<br/>
+          <input type='number' value={el.props.width||600} onChange={(e:any)=>set('width', Number(e.target.value))} />
+        </label>
+      )}
+      {el.type === 'textAlignment' && (
+        <label style={{display:'block', marginTop:8}}>Mode<br/>
+          <input value={el.props.alignment||'left'} onChange={(e:any)=>set('alignment', e.target.value)} style={{width:'100%'}} />
+        </label>
+      )}
+      <label style={{display:'block', marginTop:8}}>Name<br/>
+        <input value={el.name} onChange={(e:any)=>{ useProject.getState().renameElement(el.id, e.target.value); useProject.getState().regenCode(); }} style={{width:'100%'}} />
+      </label>
     </div>
   );
 };

@@ -1,4 +1,4 @@
-export type ElementType = 'text' | 'rect' | 'rectOutline' | 'roundrect' | 'roundedRectOutline' | 'circle' | 'circleOutline' | 'image' | 'imageBox' | 'button' | 'imageButton' | 'blankButton' | 'slider' | 'group';
+export type ElementType = 'text' | 'rect' | 'rectOutline' | 'roundrect' | 'roundedRectOutline' | 'circle' | 'circleOutline' | 'image' | 'imageBox' | 'button' | 'imageButton' | 'blankButton' | 'slider' | 'mute' | 'colorFilter' | 'color' | 'disableInput' | 'buttonHoverColor' | 'setCursorState' | 'ignoreNavigation' | 'font' | 'align' | 'textOutline' | 'wordWrap' | 'textAlignment' | 'drawLater' | 'group';
 
 export interface BaseElement {
   id: string;
